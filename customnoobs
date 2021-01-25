@@ -1,0 +1,202 @@
+#!/bin/bash
+
+#Function to track time of operations
+reporttime () {
+	duration=$(( $2 - $1 ))
+	if (( $duration > 3600 ))
+	then
+		let "hours=duration/3600"
+		let "minutes=(duration%3600)/60"
+		let "seconds=(duration%3600)%60"
+		echo "Completed in $hours hour(s), $minutes minute(s) and $seconds second(s)"
+	elif (( $duration > 60 ))
+	then
+		let "minutes=(duration%3600)/60"
+		let "seconds=(duration%3600)%60"
+		echo "Completed in $minutes minute(s) and $seconds second(s)"
+	else
+		echo "Completed in $duration seconds"
+	fi
+}
+
+overallstart=$SECONDS
+
+#Exit if not running as root
+if [[ $(id -u) -ne 0 ]]
+then
+        printf "Please run as root\n"
+        exit 1
+fi
+
+#Get program locations
+thisfile=$(readlink -f "$0")
+thisdir=$(dirname "$thisfile")
+firstbootloc=$thisdir/firstboot
+argtestloc=$thisdir/argtest
+
+#Check that all file are there
+if [[ ! -f $firstbootloc ]] || [[ ! -f $argtestloc ]]
+then
+	echo "Please download all files to the same directory and run 'customnoobs'"
+	exit 1
+fi
+
+#Error message for invalid arguments
+function argmessage() {
+	echo ""
+	echo "Arguments must be either:"
+	echo "-Raspbian OS type preference (\"full\" or \"lite\", omit for regular)"
+	echo "-file location of script to start on first boot"
+	echo "-directory location of scripts, if using multiple scripts"
+	echo ""
+	echo "NOTE ON USING MULTIPLE SCRIPTS:"
+	echo "-directory location must be provided"
+	echo "-file location of FIRST script to call on first boot must be provided"
+	echo "-all files must be within directory provided, or subdirectories therein"
+	echo "-first script called must be wihtin 1st level of directory, not a subdirectory"
+	echo "-files and subdirectories will be copied from directory provided recursively"
+	echo "    (so do not, for example, provide your user home directory if it is not otherwise empty)"
+	echo "-all files will be placed in the directory /usr/local/bin/firstboot/[dirname]"
+	echo "-be careful when referencing other scripts to make sure that the calls will succeed"
+	echo "    (for example, use the absolute path /usr/local/bin/firstboot/[dirname] if you are unsure)"
+}
+
+#Make sure not too many args
+if [[ $# -gt 3 ]]
+then
+	echo "Too many arguments (max 3, order is not important)"
+	argmessage
+	exit 1
+fi
+
+#Process each argument
+for arg in "$@"
+do
+	source $argtestloc
+done
+
+#Use regular raspbian version if not otherwise speified
+if [[ -z $os ]]
+then
+	os="raspbian"
+fi
+
+#Need a script location regardless
+if [[ -z $scriptloc ]]
+then
+	echo "Must provide script file location as an argument"
+	argmessage
+	exit 1
+fi
+
+#Check that script is inside directory (at first level)
+if [[ -n $scriptdirloc ]] && [[ $scriptloc != "$scriptdirloc/$scriptname" ]]
+then
+	echo "File location of script must be within directory provided, and not a subdirectory therein"
+	argmessage
+	exit 1
+fi
+
+#Define paths
+ospath=NOOBS/os/$os
+rootpath=$ospath/root
+etcpath=$rootpath/etc
+binpathsys=/usr/local/bin
+binpath=$rootpath$binpathsys
+firstbootpath=$binpath/firstboot
+firstbootpathsys=$binpathsys/firstboot
+firstbootlocbin=$firstbootpath/firstboot
+rclocetc=$etcpath/rc.local
+partitions=$ospath/partitions.json
+recoverycmd=NOOBS/recovery.cmdline
+
+#BEGIN MAIN PROGRAM
+
+echo "Downloading NOOBS..."
+starttime=$SECONDS
+wget --quiet https://downloads.raspberrypi.org/NOOBS_lite_latest
+mv NOOBS_lite_latest NOOBS.zip
+reporttime $starttime $SECONDS
+
+echo "Unzipping NOOBS..."
+starttime=$SECONDS
+unzip -qq NOOBS.zip -d NOOBS
+rm NOOBS.zip
+reporttime $starttime $SECONDS
+
+echo "Downloading Raspbian..."
+starttime=$SECONDS
+wget --quiet --recursive --level=1 --no-parent --no-directories --directory-prefix=$ospath --reject "index.html*" --execute robots=off http://downloads.raspberrypi.org/$os/
+reporttime $starttime $SECONDS
+
+echo "Unpacking root.tar.xz..."
+starttime=$SECONDS
+mkdir $rootpath
+tar --numeric-owner -xf $ospath/root.tar.xz -C $rootpath
+rm $ospath/root.tar.xz
+reporttime $starttime $SECONDS
+
+echo "Making modifications..."
+starttime=$SECONDS
+mkdir $firstbootpath
+cp $firstbootloc $firstbootpath
+if [[ -n $scriptdirloc ]]
+then
+	cp -r $scriptdirloc $firstbootpath
+else
+	cp $scriptloc $firstbootpath
+fi
+cp $rclocetc $firstbootpath
+sed -i '/^exit 0/d' $rclocetc
+echo "$firstbootpathsys/firstboot &" >> $rclocetc
+echo "exit 0" >> $rclocetc
+if [[ -n $scriptdirloc ]]
+then
+	echo "$firstbootpathsys/$scriptdirname/$scriptname" >> $firstbootlocbin
+else
+	echo "$firstbootpathsys/$scriptname" >> $firstbootlocbin
+fi
+echo "exit 0" >> $firstbootlocbin
+reporttime $starttime $SECONDS
+
+echo "Tarring modified Raspbian..."
+starttime=$SECONDS
+tar --numeric-owner -cpf $ospath/root.tar -C $rootpath .
+rm -r $rootpath
+#get filesize for .json file:
+tarsize=$(stat -c %s $ospath/root.tar)
+tarsizemb=$(( tarsize / 1048576 + 1 ))
+reporttime $starttime $SECONDS
+
+echo "Updating partitions.json file..."
+starttime=$SECONDS
+sizetag=uncompressed_tarball_size
+rootlabel=$(sed -n '/label.*root/=' $partitions | head -1)
+blockstart=$(sed -n '1,'"$rootlabel"'p' $partitions | tac | sed -n '/{/=' | head -1)
+blockstart=$(( rootlabel - blockstart + 1 ))
+blockend=$(sed -n ''"$blockstart"',$p' $partitions | sed -n '/}/=' | head -1)
+blockend=$(( blockstart + blockend -1 ))
+sed -i ''"$blockstart"','"$blockend"'s/"'"$sizetag"'".*/"'"$sizetag"'": '"$tarsizemb"',/' $partitions
+reporttime $starttime $SECONDS
+
+echo "Compressing tar file (this may take a while)..."
+starttime=$SECONDS
+xz -9 -e $ospath/root.tar
+#rm $ospath/root.tar
+reporttime $starttime $SECONDS
+
+echo "Modifying recovery.cmdline..."
+starttime=$SECONDS
+sed -i '$ s/$/ lang=en/' $recoverycmd
+sed -i '$ s/$/ keyboard=us/' $recoverycmd
+sed -i '$ s/$/ silentinstall/' $recoverycmd
+reporttime $starttime $SECONDS
+
+reporttime $overallstart $SECONDS
+
+#TO DO:
+#Progress indicators?  Ideally log friendly
+#inputs:
+#  possibly allow filename (not rel or abs path) if within directory
+#  possibly make sure scripts are executable and correct ownership (probably not necessary)
+

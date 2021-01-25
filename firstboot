@@ -1,0 +1,13 @@
+#!/bin/bash
+
+#Wait until rc.local finishes and restore it to it's original state
+while pidof -x rc.local > /dev/null
+do
+        sleep 1
+done
+cp /usr/local/bin/rc.local /etc
+
+#Wait until system is up and running to begin
+systemctl is-system-running --wait
+
+#Run script here (added automatically)
