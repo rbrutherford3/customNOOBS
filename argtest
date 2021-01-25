@@ -1,0 +1,19 @@
+#!/bin/bash
+if [[ -f $arg ]]
+then
+	scriptloc=$(readlink -f $arg)
+	scriptname=$(basename -- "$scriptloc")
+elif [[ -d $arg ]]
+then
+	scriptdirloc=$(readlink -f $arg)
+	scriptdirname=$(basename -- "$scriptdirloc")
+elif [[ $arg == "lite" ]]
+then
+	os="raspbian_lite"
+elif [[ $arg == "full" ]]
+then
+	os="raspbian_full"
+else
+	argmessage
+	exit 1
+fi
