@@ -162,7 +162,7 @@ reporttime $starttime $SECONDS
 echo "Tarring modified Raspbian..."
 starttime=$SECONDS
 tar --numeric-owner -cpf $ospath/root.tar -C $rootpath .
-rm -r $rootpath
+#rm -r $rootpath
 #get filesize for .json file:
 tarsize=$(stat -c %s $ospath/root.tar)
 tarsizemb=$(( tarsize / 1048576 + 1 ))
@@ -182,7 +182,7 @@ reporttime $starttime $SECONDS
 echo "Compressing tar file (this may take a while)..."
 starttime=$SECONDS
 xz -9 -e $ospath/root.tar
-#rm $ospath/root.tar
+rm $ospath/root.tar
 reporttime $starttime $SECONDS
 
 echo "Modifying recovery.cmdline..."
