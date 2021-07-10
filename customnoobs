@@ -121,12 +121,13 @@ reporttime $starttime $SECONDS
 echo "Unzipping NOOBS..."
 starttime=$SECONDS
 unzip -qq NOOBS.zip -d NOOBS
-rm NOOBS.zip
+mv NOOBS.zip $thisdir
 reporttime $starttime $SECONDS
 
 echo "Downloading Raspbian..."
 starttime=$SECONDS
 wget --quiet --recursive --level=1 --no-parent --no-directories --directory-prefix=$ospath --reject "index.html*" --execute robots=off http://downloads.raspberrypi.org/$os/
+cp -a $ospath $thisdir
 reporttime $starttime $SECONDS
 
 echo "Unpacking root.tar.xz..."
@@ -146,7 +147,7 @@ then
 else
 	cp $scriptloc $firstbootpath
 fi
-cp $rclocetc $firstbootpath
+cp -a $rclocetc $firstbootpath
 sed -i '/^exit 0/d' $rclocetc
 echo "$firstbootpathsys/firstboot &" >> $rclocetc
 echo "exit 0" >> $rclocetc
@@ -162,7 +163,7 @@ reporttime $starttime $SECONDS
 echo "Tarring modified Raspbian..."
 starttime=$SECONDS
 tar --numeric-owner -cpf $ospath/root.tar -C $rootpath .
-#rm -r $rootpath
+rm -r $rootpath
 #get filesize for .json file:
 tarsize=$(stat -c %s $ospath/root.tar)
 tarsizemb=$(( tarsize / 1048576 + 1 ))
@@ -182,7 +183,6 @@ reporttime $starttime $SECONDS
 echo "Compressing tar file (this may take a while)..."
 starttime=$SECONDS
 xz -9 -e $ospath/root.tar
-rm $ospath/root.tar
 reporttime $starttime $SECONDS
 
 echo "Modifying recovery.cmdline..."
@@ -199,4 +199,3 @@ reporttime $overallstart $SECONDS
 #inputs:
 #  possibly allow filename (not rel or abs path) if within directory
 #  possibly make sure scripts are executable and correct ownership (probably not necessary)
-

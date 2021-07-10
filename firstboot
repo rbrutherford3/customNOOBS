@@ -5,7 +5,7 @@ while pidof -x rc.local > /dev/null
 do
         sleep 1
 done
-cp /usr/local/bin/firstboot/rc.local /etc
+cp -a /usr/local/bin/firstboot/rc.local /etc
 
 #Wait until system is up and running to begin
 systemctl is-system-running --wait
